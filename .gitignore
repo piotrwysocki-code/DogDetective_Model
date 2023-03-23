@@ -1,0 +1,7 @@
+variables/*
+keras_metadata.pb
+saved_model.pb
+assets/*
+Dog_Breed_Scanner/120breedfeatures.h5
+Dog_Breed_Scanner/120breedmodel.h5
+categoryDict.pkl

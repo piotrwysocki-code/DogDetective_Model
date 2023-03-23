@@ -1,0 +1,138 @@
+# %%
+
+import numpy as np
+import multiprocessing
+import os
+import cv2
+import random
+import time
+import shutil
+import csv
+import json
+import pandas as pd
+import matplotlib.pyplot as plt
+import matplotlib.image as pltimg
+from pickle_mixin import test
+import tensorflow as tf
+from tqdm import tqdm
+from sklearn.model_selection import train_test_split
+from keras.models import Model, Sequential
+from keras import layers
+from keras import utils as np_utils
+from keras.callbacks import EarlyStopping, ReduceLROnPlateau
+from keras.preprocessing.image import ImageDataGenerator, load_img
+from keras.utils.np_utils import to_categorical
+from keras.layers import Conv2D, GlobalAveragePooling2D, Dense, Flatten, Dropout, Activation, BatchNormalization, InputLayer, Lambda, Input
+from array import *
+from keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau
+from keras.applications.inception_resnet_v2 import InceptionResNetV2, preprocess_input as resnet_preprocess
+from keras.applications.inception_v3 import InceptionV3, preprocess_input as inception_preprocess
+from keras.applications.xception import Xception, preprocess_input as xception_preprocess
+from keras.applications.nasnet import NASNetLarge, preprocess_input as nasnet_preprocess
+from keras.layers.merge import concatenate
+
+# %%
+
+trainDir = r'C:\Users\Hugh Mungus\Desktop\dogs\train'
+categoryDict = {}
+train_imagenames = []
+train_categories = []
+
+print("Training: ")
+count1 = 0
+for dirname, _, filenames in os.walk(trainDir):
+    #Just taking the last portion of the directory name which is the class name
+    category = dirname[40:]
+    #Skipping the first directory a.k.a the main directory because it has no images
+    if count1 != 0:
+        for filename in filenames:
+            if filename != '':
+                #Making sure we stay within the right category directory
+                index = dirname.find(category)
+                if(index > -1):
+                    #Appending the full file URI to the imagenames array
+                    train_imagenames.append(dirname + '/' + filename)
+                    #Count -1 because we need our keys to start at 0
+                    train_categories.append(count1-1)
+        #Mapping indexes 0-25 with class name strings
+        categoryDict[count1-1] = category
+        print('Category:', category, '- Key:',
+                count1-1, '- Total Imgs:', len(filenames))
+    count1 += 1 
+
+trainDF = pd.DataFrame({
+    'filename': train_imagenames,
+    'category': train_categories
+})
+
+dogBreeds = (sorted(list(set(trainDF.category))))
+
+# %%
+
+model = tf.keras.models.load_model('26breedfeatures.h5')
+
+
+denseCNN = tf.keras.models.load_model('26dogbreed.h5')
+
+model.summary()
+
+denseCNN.summary()
+
+
+# %%
+
+n = 331
+
+def feature_extractor(dataframe):
+    img_size = (n, n, 3)
+    data_size = (len(dataframe))
+    batch_size = 8
+    #Important thing to note is the second value after data_size should be same as the 
+    #second value of your models TensorShape (i.e. [None, 9664])
+    #if you use all 4 pretrained models the val will be 9664
+    x = np.zeros([data_size, 9664], dtype=np.uint8)
+    datagen = ImageDataGenerator()
+    temp = datagen.flow_from_dataframe(dataframe,
+                                        x_col='filename', class_mode=None,
+                                        batch_size=8, shuffle=False, target_size=(img_size[:2]), color_mode='rgb')
+    i = 0
+    for input_batch in tqdm(temp):
+        input_batch = model.predict(input_batch)
+        x[i * batch_size: (i + 1) * batch_size] = input_batch
+        i += 1
+        if i * batch_size >= data_size:
+            break
+    return x
+
+# %%
+test_img_dir = r'C:\Users\Hugh Mungus\Desktop\google test images\dalmation.jpg'
+test_img = cv2.imread(test_img_dir)
+res = cv2.resize(test_img, (n,n), interpolation=cv2.INTER_LINEAR)
+plt.imshow(res)
+test_img_uri = np.asarray(test_img_dir)
+
+imDF = pd.DataFrame({
+    'filename': test_img_uri
+}, index=[0])
+
+x_imgFeatures = feature_extractor(imDF)
+
+y_pred = denseCNN.predict(x_imgFeatures)
+
+newArray = y_pred[0]
+
+results = []
+
+for var in dogBreeds:
+    results.append(categoryDict[var])
+
+resultsDF = pd.DataFrame({
+    'Breed': results,
+    'Confidence': y_pred[0]
+})
+
+column = resultsDF["Confidence"]
+maxIndex = column.idxmax()
+print(resultsDF)
+print("Breed: ", resultsDF.Breed[maxIndex], " - Confidence: ", resultsDF.Confidence[maxIndex])
+# %%
